@@ -20,53 +20,38 @@
         - User Experience: A loading overlay provides feedback during initial setup and data updates. A custom modal replaces browser alerts for a more integrated feel.
         - OPTIMIZATION: The globe now uses an adaptive Level of Detail (LOD) strategy. It loads a low-polygon sphere first for speed, then upgrades to a high-polygon sphere on capable devices.
     -->
+    <!-- --- AI & DATABASE SDKS --- -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script> 
+
     <script type="module">
-        // Import the functions you need from the SDKs
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // --- Database & AI Configuration ---
+        // INSTRUCTIONS: 
+        // 1. Create a Supabase project and get your URL and Key.
+        // 2. Create a Hugging Face token at hf.co/settings/tokens.
+        const supabaseConfig = {
+            url: "", // e.g., 'https://xyz.supabase.co'
+            key: ""  // e.g., 'eyJhbGciOiJIUzI1...'
+        };
+        const hfConfig = {
+            token: "", // Hugging Face API Token
+            modelId: "mistralai/Mistral-7B-v0.3" // Default model for Q&A
+        };
 
-        // --- Firebase Initialization ---
-        // NOTE: To enable Firebase persistence, you must provide your own Firebase project configuration here.
-        const firebaseConfig = {}; // Intentionally empty for this example
+        window.supabase = null;
+        window.hfConfig = hfConfig;
 
-        window.firebaseApp = null;
-        window.db = null;
-        window.auth = null;
-        window.userId = null;
-        
         try {
-            // Check if firebaseConfig has been populated
-            if (Object.keys(firebaseConfig).length > 0) {
-                window.firebaseApp = initializeApp(firebaseConfig);
-                window.db = getFirestore(window.firebaseApp);
-                window.auth = getAuth(window.firebaseApp);
-
-                onAuthStateChanged(window.auth, async (user) => {
-                    if (user) {
-                        window.userId = user.uid;
-                        console.log("Firebase: User signed in:", window.userId);
-                    } else {
-                        console.log("Firebase: No user signed in. Attempting anonymous sign-in.");
-                        try {
-                            await signInAnonymously(window.auth);
-                            window.userId = window.auth.currentUser?.uid;
-                        } catch (error) {
-                            console.error("Firebase: Anonymous sign-in failed:", error);
-                            window.userId = crypto.randomUUID(); // Fallback for local operation
-                        }
-                    }
-                    // Notify the main script that Firebase is ready
-                    document.dispatchEvent(new CustomEvent('firebaseReady'));
-                });
+            if (supabaseConfig.url && supabaseConfig.key) {
+                window.supabase = supabase.createClient(supabaseConfig.url, supabaseConfig.key);
+                console.log("Supabase: Initialized successfully.");
+                document.dispatchEvent(new CustomEvent('supabaseReady'));
             } else {
-                throw new Error("Firebase config is empty.");
+                throw new Error("Supabase config is empty.");
             }
         } catch (error) {
-            console.warn("Firebase not configured. Running in local mode.", error.message);
-            window.userId = crypto.randomUUID();
-            // Dispatch the event anyway so the app can start in local mode
-            setTimeout(() => document.dispatchEvent(new CustomEvent('firebaseReady')), 10);
+            console.warn("Supabase not configured. Running in local simulation mode.", error.message);
+            setTimeout(() => document.dispatchEvent(new CustomEvent('supabaseReady')), 10);
         }
     </script>
     
@@ -213,16 +198,17 @@
                     </div>
                 </div>
             </div>
-             <div class="flex flex-col md:flex-row justify-center items-center gap-4 mt-6">
+            <div class="flex flex-col md:flex-row justify-center items-center gap-4 mt-6">
                 <div class="flex flex-wrap justify-center gap-2">
+                    <button data-source="simulated" class="source-toggle-btn bg-blue-500 text-white font-semibold py-2 px-4 rounded-full text-sm transition">AI Simulation</button>
+                    <button data-source="real" class="source-toggle-btn bg-gray-200 dark:bg-slate-700 font-semibold py-2 px-4 rounded-full text-sm transition">Real-Time Weather</button>
+                </div>
+                <div class="flex flex-wrap justify-center gap-2 border-l border-gray-300 pl-4">
                     <button data-mode="visible" class="globe-mode-btn font-semibold py-2 px-4 rounded-full text-sm transition">Visible</button>
                     <button data-mode="infrared" class="globe-mode-btn font-semibold py-2 px-4 rounded-full text-sm transition">Infrared</button>
                     <button data-mode="water-vapor" class="globe-mode-btn font-semibold py-2 px-4 rounded-full text-sm transition">Water Vapor</button>
                     <button data-mode="cloud-clusters" class="globe-mode-btn font-semibold py-2 px-4 rounded-full text-sm transition">Clusters</button>
                 </div>
-                <button id="clearDataBtn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-full shadow-md transition-transform transform hover:scale-105">
-                    Clear History
-                </button>
             </div>
             <p class="text-center text-sm text-gray-500 mt-4">Last Updated: <span id="last-updated"></span></p>
         </section>
@@ -302,7 +288,8 @@
             theme: 'light',
             charts: {},
             globe: {},
-            apiKey: '', // IMPORTANT: Add your Gemini API key here for the Q&A feature to work.
+            dataSource: 'simulated',
+            hfToken: '', // Will be pulled from window.hfConfig
             currentClusters: []
         };
 
@@ -355,14 +342,14 @@
             initUIComponents();
             initGlobe();
             
-            document.addEventListener('firebaseReady', () => {
-                showLoading("Loading initial data...");
-                // Simulate async data loading
-                setTimeout(() => {
-                    updateAllData();
-                    setInterval(updateAllData, 1800000); // Update every 30 mins
-                    hideLoading();
-                }, 500);
+            document.addEventListener('supabaseReady', () => {
+                showLoading("Connecting to Database...");
+                initRealtime();
+                
+                // Load initial data from Supabase
+                fetchDataFromSupabase();
+                
+                hideLoading();
             });
              // Add a small delay for the adaptive quality check to not interfere with initial load
             setTimeout(adaptGlobeQuality, 2000);
@@ -425,6 +412,19 @@
             elements.tabButtons.forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
             showTab('details'); // Set initial state
             
+            // Source Toggle (Real vs Simulated)
+            const sourceBtns = document.querySelectorAll('.source-toggle-btn');
+            sourceBtns.forEach(btn => btn.addEventListener('click', () => {
+                state.dataSource = btn.dataset.source;
+                sourceBtns.forEach(b => {
+                    b.classList.remove('bg-blue-500', 'text-white');
+                    b.classList.add('bg-gray-200', 'dark:bg-slate-700');
+                });
+                btn.classList.add('bg-blue-500', 'text-white');
+                btn.classList.remove('bg-gray-200', 'dark:bg-slate-700');
+                fetchDataFromSupabase();
+            }));
+
             // Climate Explorer Sliders
             elements.sstSlider.addEventListener('input', updateClimateExplorer);
             elements.windShearSlider.addEventListener('input', updateClimateExplorer);
@@ -442,17 +442,55 @@
             elements.loadingOverlay.classList.add('opacity-0', 'pointer-events-none');
         }
         
-        // Data Update Cycle
-        function updateAllData() {
-            showLoading("Updating analysis data...");
-            state.currentClusters = generateSimulatedClusters(Math.floor(Math.random() * 5) + 4);
-            
+        // Data Sync Layer (Supabase)
+        async function fetchDataFromSupabase() {
+            if (!window.supabase) {
+                console.log("Supabase not active; using simulated clusters.");
+                updateAllData(); // Fallback to simulation
+                return;
+            }
+
+            try {
+                const { data, error } = await window.supabase
+                    .from('tcc_records')
+                    .select('*')
+                    .eq('source', state.dataSource)
+                    .order('created_at', { ascending: false })
+                    .limit(10);
+
+                if (error) throw error;
+                state.currentClusters = data || [];
+                updateUIForData();
+            } catch (err) {
+                console.error("DB Fetch Error:", err.message);
+                updateAllData();
+            }
+        }
+
+        function initRealtime() {
+            if (!window.supabase) return;
+            window.supabase
+                .channel('tcc_updates')
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tcc_records' }, payload => {
+                    if (payload.new.source === state.dataSource) {
+                        state.currentClusters.unshift(payload.new);
+                        if (state.currentClusters.length > 10) state.currentClusters.pop();
+                        updateUIForData();
+                    }
+                })
+                .subscribe();
+        }
+
+        function updateUIForData() {
             updateDashboard();
             updateOutcomes();
             updateGlobeTexture();
-
             elements.lastUpdated.textContent = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
-            hideLoading();
+        }
+
+        function updateAllData() {
+            state.currentClusters = generateSimulatedClusters(Math.floor(Math.random() * 5) + 4);
+            updateUIForData();
         }
 
         // Methodology Section Logic
@@ -558,36 +596,42 @@
             renderOutcomesRadarChart(normalizedData);
         }
 
-        // AI Q&A Logic
+        // AI Q&A Logic (Hugging Face)
         elements.askAiBtn.addEventListener('click', async () => {
             const question = elements.qaInput.value.trim();
+            const token = window.hfConfig?.token || state.hfToken;
+
             if (!question) {
                 elements.qaOutput.textContent = "Please enter a question.";
                 return;
             }
-            if (!state.apiKey) {
-                elements.qaOutput.textContent = "API Key is not configured. Please add your Gemini API key in the script to enable this feature.";
+            if (!token) {
+                elements.qaOutput.textContent = "Hugging Face Token is required for AI. Check the script config.";
                 return;
             }
+
             elements.qaSpinner.classList.remove('hidden');
             elements.qaOutput.textContent = '';
             elements.askAiBtn.disabled = true;
 
             try {
-                const prompt = `You are an expert on meteorology and satellite data analysis. Based on a scientific model for identifying Tropical Cloud Clusters (TCCs), answer this question concisely: "${question}". Key model details: it uses half-hourly INSAT-3D infrared data, identifies candidates by cold temperatures and large size (>34,800 km²), checks for independence (clusters >1200km apart are distinct), and tracks their movement over time.`;
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${state.apiKey}`, {
+                const prompt = `[INST] You are an expert meteorologist. Analyzing the current TCC cloud data in Supabase: ${JSON.stringify(state.currentClusters)}. Question: ${question} [/INST]`;
+                
+                const response = await fetch(`https://api-inference.huggingface.co/models/${window.hfConfig.modelId}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ inputs: prompt, parameters: { max_new_tokens: 300 } })
                 });
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error.message || `API Error: ${response.statusText}`);
-                }
+
                 const result = await response.json();
-                elements.qaOutput.textContent = result.candidates[0].content.parts[0].text;
+                
+                if (result.error) throw new Error(result.error);
+                
+                // Handling different HF API output formats
+                elements.qaOutput.textContent = Array.isArray(result) ? result[0].generated_text : result.generated_text;
+
             } catch (error) {
-                elements.qaOutput.textContent = `An error occurred: ${error.message}`;
+                elements.qaOutput.textContent = `AI Connection Error: ${error.message}. Ensure your HF token is valid.`;
             } finally {
                 elements.qaSpinner.classList.add('hidden');
                 elements.askAiBtn.disabled = false;
