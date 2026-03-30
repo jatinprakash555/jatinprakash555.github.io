@@ -24,18 +24,20 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script> 
 
+    <!-- Configuration -->
+    <script src="config.js"></script>
     <script type="module">
         // --- Database & AI Configuration ---
-        // INSTRUCTIONS: 
-        // 1. Create a Supabase project and get your URL and Key.
-        // 2. Create a Hugging Face token at hf.co/settings/tokens.
+        // Load configuration from config.js (if it exists locally)
+        const config = window.ENV_CONFIG || {};
+
         const supabaseConfig = {
-            url: "", // e.g., 'https://xyz.supabase.co'
-            key: ""  // e.g., 'eyJhbGciOiJIUzI1...'
+            url: config.supabaseUrl || "https://ehwntxgkmktuekgyshlf.supabase.co", 
+            key: config.supabaseKey || "sb_publishable_hATfPPrvoAMfQG2jBv1LYQ_-hNoigm9" 
         };
         const hfConfig = {
-            token: "", // Hugging Face API Token
-            modelId: "mistralai/Mistral-7B-v0.3" // Default model for Q&A
+            token: config.hfToken || "", // Hugging Face API Token (now stored locally)
+            modelId: "mistralai/Mistral-7B-v0.3" 
         };
 
         window.supabase = null;
